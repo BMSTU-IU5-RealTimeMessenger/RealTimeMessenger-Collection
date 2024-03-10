@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
+	"io"
 	"net/http"
 	"os"
-	"time"
-	"strconv"
 
 	"github.com/IBM/sarama"
 	"github.com/gin-gonic/gin"
@@ -50,28 +48,15 @@ func (s *Server) Run() {
 	r.Run(":" + port)
 }
 
-type Segment struct {
-	Data   string    `json:"data"`
-	Time   time.Time `json:"time"`
-	Number int       `json:"number"`
-	Count  int       `json:"count"`
-}
-
 func (s *Server) Transfer(c *gin.Context) {
-	var segment Segment
-	if err := c.ShouldBindJSON(&segment); err != nil {
-		c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	jsonData, err := json.Marshal(segment)
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	msg := &sarama.ProducerMessage{Topic: s.Topic,
-		Key:   sarama.StringEncoder(strconv.FormatInt(segment.Time.Unix(), 10)),
-		Value: sarama.ByteEncoder(jsonData)}
+		Partition: 0,
+		Value:     sarama.ByteEncoder(body)}
 	_, _, err = s.KafkaProducer.SendMessage(msg)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
