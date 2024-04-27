@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -19,7 +20,7 @@ type Server struct {
 func NewServer() (*Server, error) {
 	err := godotenv.Load()
 	if err != nil {
-		return nil, err
+		log.Println("No .env file")
 	}
 
 	kafkaAddr := os.Getenv("KAFKA_ADDR")
@@ -44,27 +45,37 @@ func (s *Server) Run() {
 	r := gin.Default()
 	r.POST("/transfer", s.Transfer)
 
-	port := os.Getenv("PORT")
+	port := os.Getenv("COLLECTION_SERVER_PORT")
+	log.Println("Server is running")
 	r.Run(":" + port)
 }
 
 func (s *Server) Transfer(c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
+	data, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	log.Println("Got segmet:")
+	log.Println(string(data))
 	msg := &sarama.ProducerMessage{Topic: s.Topic,
 		Partition: 0,
-		Value:     sarama.ByteEncoder(body)}
+		Value:     sarama.ByteEncoder(data)}
 	_, _, err = s.KafkaProducer.SendMessage(msg)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+
+	c.Status(http.StatusOK)
 }
 
 func main() {
-	server, _ := NewServer()
+	server, err := NewServer()
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+
 	server.Run()
 }
