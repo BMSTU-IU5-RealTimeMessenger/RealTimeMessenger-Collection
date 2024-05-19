@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
+
+type Segment struct {
+	Data   string `json:"data"`
+	Time   int64  `json:"time"`
+	Number int    `json:"number"`
+	Count  int    `json:"count"`
+}
+
+type SegmentWithError struct {
+	SegmentData Segment `json:"segment" binding:"required"`
+	ErrorSign   *bool    `json:"error" binding:"required"`
+}
 
 type Server struct {
 	HTTPClient    *http.Client
@@ -47,20 +59,27 @@ func (s *Server) Run() {
 
 	port := os.Getenv("COLLECTION_SERVER_PORT")
 	log.Println("Server is running")
-	r.Run(":" + port)
+	r.Run(os.Getenv("IP") + ":" + port)
 }
 
 func (s *Server) Transfer(c *gin.Context) {
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
+	var segment SegmentWithError
+	if err := c.ShouldBindJSON(&segment); err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
 		return
 	}
-	log.Println("Got segmet:")
-	log.Println(string(data))
+
+	bytes, err := json.Marshal(segment.SegmentData)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	data := string(bytes)
+	log.Println(">", data)
 	msg := &sarama.ProducerMessage{Topic: s.Topic,
 		Partition: 0,
-		Value:     sarama.ByteEncoder(data)}
+		Value:     sarama.StringEncoder(data)}
 	_, _, err = s.KafkaProducer.SendMessage(msg)
 	if err != nil {
 		c.AbortWithStatus(http.StatusInternalServerError)
